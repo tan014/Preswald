@@ -49,6 +49,8 @@ Non-technical users often struggle to extract insights from raw CSV data. Runnin
 
 ## 🧠 Project Architecture
 
+## 🧠 Project Architecture
+
 ```mermaid
 flowchart TD
   A[User Uploads CSV] --> B[Frontend (React + Pyodide)]
