@@ -1,13 +1,11 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import pandas as pd
 import json
 import requests
-import os
 
 app = Flask(__name__)
-
-# Make sure to set this before running: export OPENROUTER_API_KEY="your-key-here"
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+CORS(app)  # Enable CORS for all routes
 
 def classify_question(question: str) -> str:
     q = question.lower()
@@ -20,25 +18,22 @@ def classify_question(question: str) -> str:
     else:
         return "insight"
 
-def query_openrouter(prompt: str) -> str:
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "HTTP-Referer": "https://yourapp.com",
-        "X-Title": "AutoAnalystX",
-        "Content-Type": "application/json"
-    }
-
-    payload = {
-        "model": "mistralai/mistral-7b-instruct",
-        "messages": [{"role": "user", "content": prompt}],
-    }
-
-    response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload)
-
-    if response.status_code != 200:
-        return f"Error from OpenRouter: {response.text}"
-
-    return response.json()['choices'][0]['message']['content']
+def query_ollama(prompt: str) -> str:
+    try:
+        response = requests.post(
+            "http://localhost:11434/api/generate",
+            headers={"Content-Type": "application/json"},
+            json={
+                "model": "mistral",
+                "prompt": prompt,
+                "stream": False
+            }
+        )
+        if response.status_code != 200:
+            return f"Error from Ollama: {response.text}"
+        return response.json().get("response", "").strip()
+    except Exception as e:
+        return f"Error calling Ollama: {str(e)}"
 
 @app.route('/ask', methods=['POST'])
 def ask():
@@ -64,6 +59,7 @@ Given the dataset below, provide a structural summary, data types, missing value
 Data:
 {csv_preview}
 """
+
     elif agent_type == "insight":
         prompt = f"""You are a data analyst.
 Analyze the dataset below and extract interesting insights, statistics, or distributions based on this user question:
@@ -74,23 +70,27 @@ User Question:
 Data:
 {csv_preview}
 """
+
     elif agent_type == "chart":
         prompt = f"""You are a Python data visualization expert.
-Given the following data and user request, write a Python snippet using matplotlib/seaborn/plotly to generate the desired chart.
 
-User Question:
+Given the user request and data, generate a Python code snippet that produces a **visual chart** using matplotlib/seaborn.
+Be sure to include the `plt.show()` command so the plot is visible.
+
+User Request:
 {question}
 
 Data (first 30 rows):
 {csv_preview}
 
-Only return Python code wrapped in triple backticks.
+Respond ONLY with runnable Python code, wrapped in triple backticks. No explanations.
 """
+
     else:
         return jsonify({"error": "Unrecognized question type."}), 400
 
-    response = query_openrouter(prompt)
-    return response
+    response = query_ollama(prompt)
+    return jsonify({"response": response})
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0', port=5000)
